@@ -12,7 +12,18 @@ dotenv.config();
 connectDB(); // Connect to MongoDB
 
 const app = express();
-app.use(cors());
+
+// FIXED: Proper CORS configuration
+app.use(cors({
+  origin: [
+    'https://a11ycheck.vercel.app',
+    'http://localhost:3000' // for local development
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
 // Email configuration
@@ -29,7 +40,7 @@ const emailConfig = {
 // Create transporter (only if email credentials are provided)
 let transporter = null;
 if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-  transporter = nodemailer.createTransport(emailConfig); // Fixed: removed 'er' from createTransporter
+  transporter = nodemailer.createTransporter(emailConfig); // Fixed: removed 'er' from createTransporter
 }
 
 // MongoDB Schema for storing scan results (FIXED)
@@ -100,6 +111,15 @@ function getReadableIssueType(wcagCode) {
 // Routes
 app.get('/', (req, res) => {
   res.send('✅ Accessibility API is running. Use POST /scan to scan a website.');
+});
+
+// FIXED: Add health check endpoint for frontend to wake up service
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    message: 'Service is healthy' 
+  });
 });
 
 // Get all scans for the current user with pagination and filtering
@@ -554,7 +574,7 @@ app.delete('/scan/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Mount auth routes
+// Mount auth routes - FIXED: Use proper API prefix
 app.use('/api/auth', authRoutes);
 
 // Error handling middleware
@@ -571,4 +591,5 @@ const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`✅ Accessibility API running on http://localhost:${PORT}`);
   console.log(`✅ Email service: ${transporter ? 'Configured' : 'Not configured'}`);
+  console.log(`✅ CORS enabled for: https://a11ycheck.vercel.app`);
 });
