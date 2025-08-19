@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const pa11y = require('pa11y');
+const puppeteer = require('puppeteer'); // Changed from puppeteer-core
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const nodemailer = require('nodemailer');
@@ -40,10 +41,10 @@ const emailConfig = {
 // Create transporter (only if email credentials are provided)
 let transporter = null;
 if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-  transporter = nodemailer.createTransporter(emailConfig); // Fixed: removed 'er' from createTransporter
+  transporter = nodemailer.createTransporter(emailConfig);
 }
 
-// MongoDB Schema for storing scan results (FIXED)
+// MongoDB Schema for storing scan results
 const scanSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   url: { type: String, required: true },
@@ -113,7 +114,7 @@ app.get('/', (req, res) => {
   res.send('✅ Accessibility API is running. Use POST /scan to scan a website.');
 });
 
-// FIXED: Add health check endpoint for frontend to wake up service
+// Add health check endpoint for frontend to wake up service
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
@@ -268,7 +269,7 @@ app.get('/scan/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Perform accessibility scan (FIXED)
+// Perform accessibility scan - UPDATED FOR RENDER
 app.post('/scan', authenticateToken, async (req, res) => {
   const { url, scanType = 'full', deviceType = 'desktop' } = req.body;
   
@@ -286,18 +287,44 @@ app.post('/scan', authenticateToken, async (req, res) => {
   try {
     const startTime = Date.now();
     
-    // Enhanced pa11y options based on scan type and device
+    // Enhanced pa11y options for production deployment
     const pa11yOptions = {
       standard: 'WCAG2AA',
       includeNotices: false,
       includeWarnings: true,
-      timeout: scanType === 'quick' ? 15000 : 30000,
-      wait: scanType === 'quick' ? 500 : 1000,
+      timeout: scanType === 'quick' ? 20000 : 40000, // Increased timeouts for production
+      wait: scanType === 'quick' ? 1000 : 2000,
+      
+      // Critical: Proper Puppeteer configuration for Render
       chromeLaunchConfig: {
-        args: deviceType === 'mobile' ? [
-          '--user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15'
-        ] : []
+        // Use installed Puppeteer executable in production
+        executablePath: process.env.NODE_ENV === 'production' 
+          ? undefined // Let Puppeteer find its own Chrome
+          : undefined,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-web-security',
+          '--disable-features=VizDisplayCompositor',
+          '--run-all-compositor-stages-before-draw',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-field-trial-config',
+          '--disable-back-forward-cache',
+          '--disable-hang-monitor',
+          '--disable-ipc-flooding-protection',
+          '--disable-background-timer-throttling',
+          '--memory-pressure-off',
+          '--max_old_space_size=4096',
+          ...(deviceType === 'mobile' ? [
+            '--user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15'
+          ] : [])
+        ],
+        headless: 'new'
       },
+      
       viewport: deviceType === 'mobile' ? {
         width: 375,
         height: 667,
@@ -310,6 +337,7 @@ app.post('/scan', authenticateToken, async (req, res) => {
     };
 
     console.log(`Starting ${scanType} scan for ${deviceType} on: ${url}`);
+    console.log('Environment:', process.env.NODE_ENV);
     
     // Run Pa11y scan
     const results = await pa11y(url, pa11yOptions);
@@ -324,9 +352,9 @@ app.post('/scan', authenticateToken, async (req, res) => {
       id: index + 1,
       type: getReadableIssueType(issue.code),
       description: String(issue.message || 'No description available'),
-      severity: String(issue.type || 'warning'), // Pa11y uses 'error', 'warning', 'notice'
+      severity: String(issue.type || 'warning'),
       selector: String(issue.selector || ''),
-      message: String(issue.message || ''), // Keep original message too
+      message: String(issue.message || ''),
       code: String(issue.code || ''),
       context: String(issue.context || ''),
       runner: String(issue.runner || 'pa11y')
@@ -340,28 +368,24 @@ app.post('/scan', authenticateToken, async (req, res) => {
 
     console.log('Processed issues:', processedIssues.length, 'items');
 
-// WITH THIS NEW CODE:
-console.log('Pa11y version:', require('pa11y/package.json').version);
-console.log('Raw Pa11y results:', results);
+    // Calculate score based on issue severity
+    const errorIssues = processedIssues.filter(i => i.severity === 'error').length;
+    const warningIssues = processedIssues.filter(i => i.severity === 'warning').length;
+    const noticeIssues = processedIssues.filter(i => i.severity === 'notice').length;
 
-// Calculate score based on issue severity (improved realistic scoring)
-const errorIssues = processedIssues.filter(i => i.severity === 'error').length;
-const warningIssues = processedIssues.filter(i => i.severity === 'warning').length;
-const noticeIssues = processedIssues.filter(i => i.severity === 'notice').length;
+    console.log(`Issue breakdown: ${errorIssues} errors, ${warningIssues} warnings, ${noticeIssues} notices`);
 
-console.log(`Issue breakdown: ${errorIssues} errors, ${warningIssues} warnings, ${noticeIssues} notices`);
+    // More realistic scoring
+    const totalIssues = processedIssues.length;
+    const errorWeight = errorIssues * 10;
+    const warningWeight = warningIssues * 5;
+    const noticeWeight = noticeIssues * 2;
 
-// More realistic scoring
-const totalIssues = processedIssues.length;
-const errorWeight = errorIssues * 10;
-const warningWeight = warningIssues * 5;
-const noticeWeight = noticeIssues * 2;
+    // Use logarithmic scaling to prevent scores hitting zero
+    const totalWeight = errorWeight + warningWeight + noticeWeight;
+    const score = Math.max(0, Math.round(100 - Math.min(95, totalWeight * 0.5)));
 
-// Use logarithmic scaling to prevent scores hitting zero
-const totalWeight = errorWeight + warningWeight + noticeWeight;
-const score = Math.max(0, Math.round(100 - Math.min(95, totalWeight * 0.5)));
-
-console.log(`Scoring: ${totalWeight} total weight -> ${score}/100 score`);
+    console.log(`Scoring: ${totalWeight} total weight -> ${score}/100 score`);
 
     // Create scan record with proper validation
     const scanData = {
@@ -390,10 +414,10 @@ console.log(`Scoring: ${totalWeight} total weight -> ${score}/100 score`);
     // Return response matching frontend expectations
     res.json({
       _id: scan._id,
-      id: scan._id, // Also include id for compatibility
+      id: scan._id,
       url: scan.url,
-      issues: processedIssues.length, // Return actual count
-      issueDetails: processedIssues, // Return all processed issues
+      issues: processedIssues.length,
+      issueDetails: processedIssues,
       score: scan.score,
       status: scan.status,
       timestamp: scan.timestamp,
@@ -574,7 +598,7 @@ app.delete('/scan/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Mount auth routes - FIXED: Use proper API prefix
+// Mount auth routes
 app.use('/api/auth', authRoutes);
 
 // Error handling middleware
@@ -592,4 +616,5 @@ app.listen(PORT, () => {
   console.log(`✅ Accessibility API running on http://localhost:${PORT}`);
   console.log(`✅ Email service: ${transporter ? 'Configured' : 'Not configured'}`);
   console.log(`✅ CORS enabled for: https://a11ycheck.vercel.app`);
+  console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
 });
