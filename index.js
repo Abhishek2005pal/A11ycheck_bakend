@@ -13,8 +13,7 @@ const { authenticateToken } = require('./routes/auth');
 dotenv.config();
 connectDB();
 
-// CRITICAL: Force pa11y to use the correct puppeteer
-process.env.PUPPETEER_EXECUTABLE_PATH = puppeteer.executablePath();
+
 const app = express();
 
 // FIXED: Proper CORS configuration
@@ -290,54 +289,51 @@ app.post('/scan', authenticateToken, async (req, res) => {
   try {
     const startTime = Date.now();
     
-    // Enhanced pa11y options for production deployment
-    const pa11yOptions = {
-      standard: 'WCAG2AA',
-      includeNotices: false,
-      includeWarnings: true,
-      timeout: scanType === 'quick' ? 20000 : 40000, // Increased timeouts for production
-      wait: scanType === 'quick' ? 1000 : 2000,
-      
-      // Critical: Proper Puppeteer configuration for Render
-      chromeLaunchConfig: {
-        // Use installed Puppeteer executable in production
-        executablePath: process.env.NODE_ENV === 'production' 
-          ? undefined // Let Puppeteer find its own Chrome
-          : undefined,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-web-security',
-          '--disable-features=VizDisplayCompositor',
-          '--run-all-compositor-stages-before-draw',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-          '--disable-field-trial-config',
-          '--disable-back-forward-cache',
-          '--disable-hang-monitor',
-          '--disable-ipc-flooding-protection',
-          '--disable-background-timer-throttling',
-          '--memory-pressure-off',
-          '--max_old_space_size=4096',
-          ...(deviceType === 'mobile' ? [
-            '--user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15'
-          ] : [])
-        ],
-        headless: 'new'
-      },
-      
-      viewport: deviceType === 'mobile' ? {
-        width: 375,
-        height: 667,
-        deviceScaleFactor: 2,
-        isMobile: true
-      } : {
-        width: 1280,
-        height: 1024
-      }
-    };
+   // Enhanced pa11y options for Render deployment
+const pa11yOptions = {
+  standard: 'WCAG2AA',
+  includeNotices: false,
+  includeWarnings: true,
+  timeout: scanType === 'quick' ? 25000 : 45000,
+  wait: scanType === 'quick' ? 1000 : 2000,
+  
+  // Optimized Puppeteer config for Render
+  chromeLaunchConfig: {
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-web-security',
+      '--disable-features=VizDisplayCompositor',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-field-trial-config',
+      '--disable-back-forward-cache',
+      '--disable-hang-monitor',
+      '--disable-ipc-flooding-protection',
+      '--disable-background-timer-throttling',
+      '--memory-pressure-off',
+      '--max_old_space_size=4096',
+      '--single-process',
+      '--no-zygote',
+      ...(deviceType === 'mobile' ? [
+        '--user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15'
+      ] : [])
+    ],
+    headless: 'new'
+  },
+  
+  viewport: deviceType === 'mobile' ? {
+    width: 375,
+    height: 667,
+    deviceScaleFactor: 2,
+    isMobile: true
+  } : {
+    width: 1280,
+    height: 1024
+  }
+};
 
     console.log(`Starting ${scanType} scan for ${deviceType} on: ${url}`);
     console.log('Environment:', process.env.NODE_ENV);
