@@ -1,7 +1,8 @@
+
 const express = require('express');
 const cors = require('cors');
 const pa11y = require('pa11y');
-const puppeteer = require('puppeteer'); // Changed from puppeteer-core
+const puppeteer = require('puppeteer');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const nodemailer = require('nodemailer');
@@ -10,8 +11,10 @@ const authRoutes = require('./routes/auth');
 const { authenticateToken } = require('./routes/auth');
 
 dotenv.config();
-connectDB(); // Connect to MongoDB
+connectDB();
 
+// CRITICAL: Force pa11y to use the correct puppeteer
+process.env.PUPPETEER_EXECUTABLE_PATH = puppeteer.executablePath();
 const app = express();
 
 // FIXED: Proper CORS configuration

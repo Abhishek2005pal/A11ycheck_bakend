@@ -1,9 +1,8 @@
 {
   "name": "server",
   "version": "1.0.0",
-  
   "main": "index.js",
- "scripts": {
+  "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
     "build": "npm install && npx puppeteer browsers install chrome"
@@ -20,8 +19,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.16.1",
     "nodemailer": "^7.0.5",
-    "pa11y": "^9.0.0",
-    "puppeteer": "^24.16.2"
+    "pa11y": "^6.2.3",
+    "puppeteer": "^21.6.1"
   },
   "description": ""
 }
